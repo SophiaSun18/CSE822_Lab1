@@ -10,7 +10,7 @@
 // CPU Scalar Mandelbrot set generation.
 // Based on the "optimized escape time algorithm" in
 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
-void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out) {
+void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out) { 
     for (uint64_t i = 0; i < img_size; ++i) {
         for (uint64_t j = 0; j < img_size; ++j) {
             // Get the plane coordinate X for the image pixel.
@@ -61,16 +61,21 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
             __m256 r_4 = _mm256_set1_ps(4.0f);
 
             for (int k = 0; k < max_iters; k++) {
+                // Calculate x2 + y2 and check if sum <= 4.0f to generate new mask.
+                __m256 sum = _mm256_add_ps(x2, y2);
+                __m256 mask_ps = _mm256_cmp_ps(sum, r_4, _CMP_LE_OQ);
+                __m256i mask = _mm256_castps_si256(mask_ps);
+
+                // If all elements are no longer active, break.
+                if (_mm256_testz_si256(mask, mask)) break;
+
                 __m256 x_new = _mm256_add_ps(_mm256_sub_ps(x2, y2), cx);
-                __m256 y_new = _mm256_sub_ps(_mm256_add_ps(w, cy), _mm256_add_ps(x2, y2));
+                __m256 temp = _mm256_sub_ps(w, x2);
+                __m256 y_new = _mm256_add_ps(_mm256_sub_ps(temp, y2), cy);
                 __m256 z_new = _mm256_add_ps(x_new, y_new);
                 __m256 w_new = _mm256_mul_ps(z_new, z_new);
                 __m256 x2_new = _mm256_mul_ps(x_new, x_new);
                 __m256 y2_new = _mm256_mul_ps(y_new, y_new);
-
-                // Calculate x2 + y2 and check if sum <= 4.0f to generate new mask.
-                __m256 sum = _mm256_add_ps(x2_new, y2_new);
-                __m256 mask_ps = _mm256_cmp_ps(sum, r_4, _CMP_LE_OQ);
 
                 // Update x2 and y2 according to the mask.
                 x2 = _mm256_blendv_ps(x2, x2_new, mask_ps);
@@ -78,12 +83,8 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
                 w  = _mm256_blendv_ps(w, w_new, mask_ps);
 
                 // Update iters based on the number of active elements.
-                __m256i mask = _mm256_castps_si256(mask_ps);
                 __m256i one = _mm256_set1_epi32(1);
                 iters = _mm256_add_epi32(iters, _mm256_and_si256(one, mask));
-
-                // If all elements are no longer active, break.
-                if (_mm256_testz_si256(mask, mask)) break;
             }
 
             // Write result.
